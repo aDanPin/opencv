@@ -56,14 +56,47 @@ std::ostream& operator<<(std::ostream &os, const Avg::Elapsed &e) {
 } // namespace
 
 namespace custom {
+// Describe networks we use in our program.
+// In G-API, topologies act like "operations". Here we define our
+// topologies as operations which have inputs and outputs.
+
+// Every network requires three parameters to define:
+// 1) Network's TYPE name - this TYPE is then used as a template
+//    parameter to generic functions like cv::gapi::infer<>(),
+//    and is used to define network's configuration (per-backend).
+// 2) Network's SIGNATURE - a std::function<>-like record which defines
+//    networks' input and output parameters (its API)
+// 3) Network's IDENTIFIER - a string defining what the network is.
+//    Must be unique within the pipeline.
+
+// Note: these definitions are neutral to _how_ the networks are
+// executed. The _how_ is defined at graph compilation stage (via parameters),
+// not on the graph construction stage.
+
+// Face detector: takes one Mat, returns another Mat
 GAPI_NETWORK(Faces,      <cv::GMat(cv::GMat)>, "face-detector");
-                                                 
-using AGInfo = std::tuple<cv::GMat, cv::GMat>;   
+
+// Age/Gender recognition - takes one Mat, returns two:
+// one for Age and one for Gender. In G-API, multiple-return-value operations
+// are defined using std::tuple<>.
+using AGInfo = std::tuple<cv::GMat, cv::GMat>;
 GAPI_NETWORK(AgeGender,  <AGInfo(cv::GMat)>,   "age-gender-recoginition");
+
+// Emotion recognition - takes one Mat, returns another.
 GAPI_NETWORK(Emotions,   <cv::GMat(cv::GMat)>, "emotions-recognition");
 
+// SSD Post-processing function - this is not a network but a kernel.
+// The kernel body is declared separately, this is just an interface.
+// This operation takes two Mats (detections and the source image),
+// and returns a vector of ROI (filtered by a default threshold).
+// Threshold (or a class to select) may become a parameter, but since
+// this kernel is custom, it doesn't make a lot of sense.
 GAPI_OPERATION(PostProc, <cv::GArray<cv::Rect>(cv::GMat, cv::GMat)>, "custom.fd_postproc") {
     static cv::GArrayDesc outMeta(const cv::GMatDesc &, const cv::GMatDesc &) {
+        // This function is required for G-API engine to figure out
+        // what the output format is, given the input parameters.
+        // Since the output is an array (with a specific type),
+        // there's nothing to describe.
         return cv::empty_array_desc();
     }
 };
@@ -176,40 +209,94 @@ int main(int argc, char *argv[])
     const std::string input = cmd.get<std::string>("input");
     const bool no_show = cmd.get<bool>("pure");
 
+    // Express our processing pipeline. Lambda-based constructor
+    // is used to keep all temporary objects in a dedicated scope.
     cv::GComputation pp([]() {
+            // Declare an empty GMat - the beginning of the pipeline.
             cv::GMat in;
-            cv::GMat detections           = cv::gapi::infer<custom::Faces>(in);
-            cv::GArray<cv::Rect> faces    = custom::PostProc::on(detections, in);
+
+            // Run face detection on the input frame. Result is a single GMat,
+            // internally representing an 1x1x200x7 SSD output.
+            // This is a single-patch version of infer:
+            // - Inference is running on the whole input image;
+            // - Image is converted and resized to the network's expected format
+            //   automatically.
+            cv::GMat detections = cv::gapi::infer<custom::Faces>(in);
+
+            // Parse SSD output to a list of ROI (rectangles) using
+            // a custom kernel. Note: parsing SSD may become a "standard" kernel.
+            cv::GArray<cv::Rect> faces = custom::PostProc::on(detections, in);
+
+            // Now run Age/Gender model on every detected face. This model has two
+            // outputs (for age and gender respectively).
+            // A special ROI-list-oriented form of infer<>() is used here:
+            // - First input argument is the list of rectangles to process,
+            // - Second one is the image where to take ROI from;
+            // - Crop/Resize/Layout conversion happens automatically for every image patch
+            //   from the list
+            // - Inference results are also returned in form of list (GArray<>)
+            // - Since there're two outputs, infer<> return two arrays (via std::tuple).
             cv::GArray<cv::GMat> ages;
             cv::GArray<cv::GMat> genders;
-            std::tie(ages, genders)       = cv::gapi::infer<custom::AgeGender>(faces, in);
+            std::tie(ages, genders) = cv::gapi::infer<custom::AgeGender>(faces, in);
+
+            // Recognize emotions on every face.
+            // ROI-list-oriented infer<>() is used here as well.
+            // Since custom::Emotions network produce a single output, only one
+            // GArray<> is returned here.
             cv::GArray<cv::GMat> emotions = cv::gapi::infer<custom::Emotions>(faces, in);
-            cv::GMat frame = cv::gapi::copy(in); // pass-through the input frame
+
+            // Return the decoded frame as a result as well.
+            // Input matrix can't be specified as output one, so use copy() here
+            // (this copy will^Wcan be optimized out in the future).
+            cv::GMat frame = cv::gapi::copy(in);
+
+            // Now specify the computation's boundaries - our pipeline consumes
+            // one images and produces five outputs.
             return cv::GComputation(cv::GIn(in),
                                     cv::GOut(frame, faces, ages, genders, emotions));
         });
 
     // Note: it might be very useful to have dimensions loaded at this point!
+    // After our computation is defined, specify how it should be executed.
+    // Execution is defined by inference backends and kernel backends we use to
+    // compile the pipeline (it is a different step).
+
+    // Declare IE parameters for FaceDetection network. Note here custom::Face
+    // is the type name we specified in GAPI_NETWORK() previously.
+    // cv::gapi::ie::Params<> is a generic configuration description which is
+    // specialized to every particular network we use.
+    //
+    // OpenCV DNN backend will have its own parmater structure with settings
+    // relevant to OpenCV DNN module. Same applies to other possible inference
+    // backends, like cuDNN, etc (:-))
     auto det_net = cv::gapi::ie::Params<custom::Faces> {
-        cmd.get<std::string>("fdm"),   // path to topology IR
-        cmd.get<std::string>("fdw"),   // path to weights
-        cmd.get<std::string>("fdd"),   // device specifier
+        cmd.get<std::string>("fdm"),   // read cmd args: path to topology IR
+        cmd.get<std::string>("fdw"),   // read cmd args: path to weights
+        cmd.get<std::string>("fdd"),   // read cmd args: device specifier
     };
 
     auto age_net = cv::gapi::ie::Params<custom::AgeGender> {
-        cmd.get<std::string>("agem"),   // path to topology IR
-        cmd.get<std::string>("agew"),   // path to weights
-        cmd.get<std::string>("aged"),   // device specifier
+        cmd.get<std::string>("agem"),   // read cmd args: path to topology IR
+        cmd.get<std::string>("agew"),   // read cmd args: path to weights
+        cmd.get<std::string>("aged"),   // read cmd args: device specifier
     }.cfgOutputLayers({ "age_conv3", "prob" });
 
     auto emo_net = cv::gapi::ie::Params<custom::Emotions> {
-        cmd.get<std::string>("emom"),   // path to topology IR
-        cmd.get<std::string>("emow"),   // path to weights
-        cmd.get<std::string>("emod"),   // device specifier
+        cmd.get<std::string>("emom"),   // read cmd args: path to topology IR
+        cmd.get<std::string>("emow"),   // read cmd args: path to weights
+        cmd.get<std::string>("emod"),   // read cmd args: device specifier
     };
 
+    // Form a kernel package (with a single OpenCV-based implementation of our
+    // post-processing) and a network package (holding our three networks).x
     auto kernels = cv::gapi::kernels<custom::OCVPostProc>();
     auto networks = cv::gapi::networks(det_net, age_net, emo_net);
+
+    // Compile our pipeline for a specific input image format (TBD - can be relaxed)
+    // and pass our kernels & networks as parameters.
+    // This is the place where G-API learns which networks & kernels we're actually
+    // operating with (the graph description itself known nothing about that).
     auto cc = pp.compileStreaming(cv::GMatDesc{CV_8U,3,cv::Size(1920,1080)},
                                   cv::compile_args(kernels, networks));
 
