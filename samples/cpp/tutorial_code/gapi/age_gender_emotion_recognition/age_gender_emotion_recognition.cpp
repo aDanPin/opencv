@@ -134,7 +134,7 @@ GAPI_OCV_KERNEL(OCVPostProc, PostProc) {
             rc.y      = static_cast<int>(rc_top    * upscale.height);
             rc.width  = static_cast<int>(rc_right  * upscale.width)  - rc.x;
             rc.height = static_cast<int>(rc_bottom * upscale.height) - rc.y;
-            out_faces.push_back(rc);
+            out_faces.push_back(rc & surface);
         }
     }
 };
@@ -193,7 +193,7 @@ void DrawFPS(cv::Mat &frame, std::size_t n, double fps) {
                 cv::Point(0, frame.rows),
                 cv::FONT_HERSHEY_SIMPLEX,
                 1,
-                cv::Scalar(0, 0, 0),
+                cv::Scalar(0, 255, 0),
                 2);
 }
 } // namespace labels
@@ -297,7 +297,7 @@ int main(int argc, char *argv[])
     // and pass our kernels & networks as parameters.
     // This is the place where G-API learns which networks & kernels we're actually
     // operating with (the graph description itself known nothing about that).
-    auto cc = pp.compileStreaming(cv::GMatDesc{CV_8U,3,cv::Size(1920,1080)},
+    auto cc = pp.compileStreaming(cv::GMatDesc{CV_8U,3,cv::Size(1280,720)},
                                   cv::compile_args(kernels, networks));
 
     std::cout << "Reading " << input << std::endl;
