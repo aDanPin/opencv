@@ -261,7 +261,8 @@ int main(int argc, char *argv[])
 
     // Fill a special LPR input (seq_ind) with a predefined value
     // First element is 0.f, the rest 87 are 1.f
-    cv::Mat lpr_seq({1,88,1,1}, CV_32F, cv::Scalar(1.f));
+    const std::vector<int> lpr_seq_dims = {88,1};
+    cv::Mat lpr_seq(lpr_seq_dims, CV_32F, cv::Scalar(1.f));
     lpr_seq.ptr<float>()[0] = 0.f;
     auto lpr_net = cv::gapi::ie::Params<custom::LPR> {
         cmd.get<std::string>("lprm"),   // path to topology IR
@@ -340,11 +341,11 @@ int main(int argc, char *argv[])
     return 0;
 }
 #else
-int main(int argc, char *argv[])
+int main()
 {
-    (void) argc;
-    (void) argv;
-    std::cout << "This sample requires G-API module & IE support available." << std::endl;
-    return 0;
+    std::cerr << "This tutorial code requires G-API module "
+                 "with Inference Engine backend to run"
+              << std::endl;
+    return 1;
 }
 #endif  // HAVE_OPECV_GAPI && HAVE_INF_ENGINE

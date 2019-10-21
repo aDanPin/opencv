@@ -1,11 +1,10 @@
 #include "opencv2/opencv_modules.hpp"
-#if defined(HAVE_OPENCV_GAPI) && defined(HAVE_INF_ENGINE)
+#if defined(HAVE_OPENCV_GAPI)
 
 #include <chrono>
 #include <iomanip>
 
 #include "opencv2/imgproc.hpp"
-#include "opencv2/imgcodecs.hpp"
 #include "opencv2/highgui.hpp"
 
 #include "opencv2/gapi.hpp"
@@ -14,6 +13,7 @@
 #include "opencv2/gapi/infer.hpp"
 #include "opencv2/gapi/infer/ie.hpp"
 #include "opencv2/gapi/cpu/gcpukernel.hpp"
+#include "opencv2/gapi/streaming/cap.hpp"
 
 namespace {
 const std::string about =
@@ -74,16 +74,16 @@ namespace custom {
 // not on the graph construction stage.
 
 // Face detector: takes one Mat, returns another Mat
-GAPI_NETWORK(Faces,      <cv::GMat(cv::GMat)>, "face-detector");
+G_API_NET(Faces,      <cv::GMat(cv::GMat)>, "face-detector");
 
 // Age/Gender recognition - takes one Mat, returns two:
 // one for Age and one for Gender. In G-API, multiple-return-value operations
 // are defined using std::tuple<>.
 using AGInfo = std::tuple<cv::GMat, cv::GMat>;
-GAPI_NETWORK(AgeGender,  <AGInfo(cv::GMat)>,   "age-gender-recoginition");
+G_API_NET(AgeGender,  <AGInfo(cv::GMat)>,   "age-gender-recoginition");
 
 // Emotion recognition - takes one Mat, returns another.
-GAPI_NETWORK(Emotions,   <cv::GMat(cv::GMat)>, "emotions-recognition");
+G_API_NET(Emotions,   <cv::GMat(cv::GMat)>, "emotions-recognition");
 
 // SSD Post-processing function - this is not a network but a kernel.
 // The kernel body is declared separately, this is just an interface.
@@ -91,7 +91,7 @@ GAPI_NETWORK(Emotions,   <cv::GMat(cv::GMat)>, "emotions-recognition");
 // and returns a vector of ROI (filtered by a default threshold).
 // Threshold (or a class to select) may become a parameter, but since
 // this kernel is custom, it doesn't make a lot of sense.
-GAPI_OPERATION(PostProc, <cv::GArray<cv::Rect>(cv::GMat, cv::GMat)>, "custom.fd_postproc") {
+G_API_OP(PostProc, <cv::GArray<cv::Rect>(cv::GMat, cv::GMat)>, "custom.fd_postproc") {
     static cv::GArrayDesc outMeta(const cv::GMatDesc &, const cv::GMatDesc &) {
         // This function is required for G-API engine to figure out
         // what the output format is, given the input parameters.
@@ -115,7 +115,6 @@ GAPI_OCV_KERNEL(OCVPostProc, PostProc) {
         const float *data = in_ssd_result.ptr<float>();
         for (int i = 0; i < MAX_PROPOSALS; i++) {
             const float image_id   = data[i * OBJECT_SIZE + 0]; // batch id
-            const float label      = data[i * OBJECT_SIZE + 1];
             const float confidence = data[i * OBJECT_SIZE + 2];
             const float rc_left    = data[i * OBJECT_SIZE + 3];
             const float rc_top     = data[i * OBJECT_SIZE + 4];
@@ -147,7 +146,7 @@ const std::string genders[] = {
 const std::string emotions[] = {
     "neutral", "happy", "sad", "surprise", "anger"
 };
-
+namespace {
 void DrawResults(cv::Mat &frame,
                  const std::vector<cv::Rect> &faces,
                  const std::vector<cv::Mat>  &out_ages,
@@ -196,6 +195,7 @@ void DrawFPS(cv::Mat &frame, std::size_t n, double fps) {
                 cv::Scalar(0, 255, 0),
                 2);
 }
+} // anonymous namespace
 } // namespace labels
 
 int main(int argc, char *argv[])
@@ -301,7 +301,7 @@ int main(int argc, char *argv[])
                                   cv::compile_args(kernels, networks));
 
     std::cout << "Reading " << input << std::endl;
-    cc.setSource(cv::gapi::GVideoCapture{input});
+    cc.setSource(cv::gapi::wip::make_src<cv::gapi::wip::GCaptureSource>(input));
 
     Avg avg;
     avg.start();
