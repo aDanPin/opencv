@@ -34,7 +34,7 @@ const std::string keys =
 
 struct Avg {
     struct Elapsed {
-        explicit Elapsed(double ms) : ss(ms/1000.), mm(ss/60) {}
+        explicit Elapsed(double ms) : ss(ms/1000.), mm(static_cast<int>(ss)/60) {}
         const double ss;
         const int    mm;
     };
@@ -74,16 +74,16 @@ namespace custom {
 // not on the graph construction stage.
 
 // Face detector: takes one Mat, returns another Mat
-G_API_NET(Faces,      <cv::GMat(cv::GMat)>, "face-detector");
+G_API_NET(Faces, <cv::GMat(cv::GMat)>, "face-detector");
 
 // Age/Gender recognition - takes one Mat, returns two:
 // one for Age and one for Gender. In G-API, multiple-return-value operations
 // are defined using std::tuple<>.
 using AGInfo = std::tuple<cv::GMat, cv::GMat>;
-G_API_NET(AgeGender,  <AGInfo(cv::GMat)>,   "age-gender-recoginition");
+G_API_NET(AgeGender, <AGInfo(cv::GMat)>,   "age-gender-recoginition");
 
 // Emotion recognition - takes one Mat, returns another.
-G_API_NET(Emotions,   <cv::GMat(cv::GMat)>, "emotions-recognition");
+G_API_NET(Emotions, <cv::GMat(cv::GMat)>, "emotions-recognition");
 
 // SSD Post-processing function - this is not a network but a kernel.
 // The kernel body is declared separately, this is just an interface.
@@ -248,7 +248,7 @@ int main(int argc, char *argv[])
 
             // Return the decoded frame as a result as well.
             // Input matrix can't be specified as output one, so use copy() here
-            // (this copy will^Wcan be optimized out in the future).
+            // (this copy will be optimized out in the future).
             cv::GMat frame = cv::gapi::copy(in);
 
             // Now specify the computation's boundaries - our pipeline consumes

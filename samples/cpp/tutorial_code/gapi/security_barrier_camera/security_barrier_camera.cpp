@@ -36,7 +36,7 @@ const std::string keys =
 namespace {
 struct Avg {
     struct Elapsed {
-        explicit Elapsed(double ms) : ss(ms/1000.), mm(ss/60) {}
+        explicit Elapsed(double ms) : ss(ms/1000.), mm(static_cast<int>(ss)/60) {}
         const double ss;
         const int    mm;
     };
@@ -73,7 +73,7 @@ G_API_OP_M(ProcessDetections,
     static std::tuple<cv::GArrayDesc,cv::GArrayDesc>
     outMeta(const cv::GMatDesc &, const cv::GMatDesc) {
         // FIXME: Need to get rid of this - literally there's nothing useful
-        return { cv::empty_array_desc(), cv::empty_array_desc() };
+        return std::make_tuple(cv::empty_array_desc(), cv::empty_array_desc());
     }
 };
 
@@ -118,7 +118,7 @@ GAPI_OCV_KERNEL(OCVProcessDetections, ProcessDetections) {
             switch (static_cast<int>(label)) {
             case 1: out_vehicles.push_back(rc & surface); break;
             case 2: out_plates.emplace_back((rc-PT(15,15)+SZ(30,30)) & surface); break;
-            default: CV_Assert(false && "Impossible happened");
+            default: CV_Assert(false && "Unknown object class");
             }
         }
     }
@@ -173,7 +173,7 @@ void DrawResults(cv::Mat &frame,
                     cv::Point(rc.x + 5, rc.y + ATTRIB_OFFSET),
                     cv::FONT_HERSHEY_COMPLEX_SMALL,
                     1,
-                        cv::Scalar(255, 0, 0));
+                    cv::Scalar(255, 0, 0));
         cv::putText(frame, labels::types[type_id],
                     cv::Point(rc.x + 5, rc.y + ATTRIB_OFFSET * 2),
                     cv::FONT_HERSHEY_COMPLEX_SMALL,
@@ -182,8 +182,8 @@ void DrawResults(cv::Mat &frame,
     }
 
     for (auto it = plates.begin(); it != plates.end(); ++it) {
-        const int MAX_LICENSE   =  88;
-        const int LPR_OFFSET = 50;
+        const int MAX_LICENSE = 88;
+        const int LPR_OFFSET  = 50;
 
         const auto &rc   = *it;
         const auto idx   = std::distance(plates.begin(), it);
