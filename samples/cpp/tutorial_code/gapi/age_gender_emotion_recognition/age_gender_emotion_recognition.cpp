@@ -33,6 +33,9 @@ const std::string keys =
     "{ hpm    |   | IE head pose recognition model IR }"
     "{ hpw    |   | IE head pose recognition model weights }"
     "{ hpd    |   | IE head pose recognition model device }"
+    "{ lmm    |   | IE facial landmarks recognition model IR }"
+    "{ lmw    |   | IE facial landmarks recognition model weights }"
+    "{ lmd    |   | IE facial landmarks recognition model device }"
     "{ pure   |   | When set, no output is displayed. Useful for benchmarking }";
 
 struct Avg {
@@ -88,6 +91,9 @@ G_API_NET(AgeGender, <AGInfo(cv::GMat)>,   "age-gender-recoginition");
 // Head pose recognition - takes one Mat, returns another.
 using HPInfo = std::tuple<cv::GMat, cv::GMat, cv::GMat>;
 G_API_NET(HeadPose, <HPInfo(cv::GMat)>,   "head-pose-recoginition");
+
+// Facial landmark recognition - takes one Mat, returns another.
+G_API_NET(FacialLandmark, <cv::GMat(cv::GMat)>,   "facial-landmark-recoginition");
 
 // Emotion recognition - takes one Mat, returns another.
 G_API_NET(Emotions, <cv::GMat(cv::GMat)>, "emotions-recognition");
@@ -151,10 +157,10 @@ GAPI_OCV_KERNEL(OCVPostProc, PostProc) {
             int max_of_sizes = std::max(bb_width, bb_height);
             
             //bb_enlarge_coefficient, dx_coef, dy_coef is a omz flags
-            //usualy it's 1.0, 1.0 and 1.2
+            //usualy it's 1.2, 1.0 and 1.0
+            float bb_enlarge_coefficient = 1.2;
             float bb_dx_coefficient = 1.0;
             float bb_dy_coefficient = 1.0;
-            float bb_enlarge_coefficient = 1.2;
             int bb_new_width = static_cast<int>(bb_enlarge_coefficient * max_of_sizes);
             int bb_new_height = static_cast<int>(bb_enlarge_coefficient * max_of_sizes);
 
@@ -165,6 +171,8 @@ GAPI_OCV_KERNEL(OCVPostProc, PostProc) {
             rc.height = bb_new_height;
 
             out_faces.push_back(rc & surface);
+
+
         }
     }
 };
@@ -185,17 +193,19 @@ void DrawResults(cv::Mat &frame,
                  const std::vector<cv::Mat>  &out_y_fc, 
                  const std::vector<cv::Mat>  &out_p_fc, 
                  const std::vector<cv::Mat>  &out_r_fc,
+                 const std::vector<cv::Mat>  &out_landmarks,
                  const std::vector<cv::Mat>  &out_emotions) {
     CV_Assert(faces.size() == out_ages.size());
     CV_Assert(faces.size() == out_genders.size());
-    CV_Assert(faces.size() == out_emotions.size());
     CV_Assert(faces.size() == out_y_fc.size());
     CV_Assert(faces.size() == out_p_fc.size());
     CV_Assert(faces.size() == out_r_fc.size());
+    CV_Assert(faces.size() == out_landmarks.size());
+    CV_Assert(faces.size() == out_emotions.size());
 
     for (auto it = faces.begin(); it != faces.end(); ++it) {
         const auto idx = std::distance(faces.begin(), it);
-        const auto &rc = *it;
+        const auto &face_rc = *it;
 
         const float *ages_data     = out_ages[idx].ptr<float>();
         const float *genders_data  = out_genders[idx].ptr<float>();
@@ -211,17 +221,17 @@ void DrawResults(cv::Mat &frame,
            << emotions[emo_id];
 
         const int ATTRIB_OFFSET = 15;
-        cv::rectangle(frame, rc, {0, 255, 0},  4);
+        cv::rectangle(frame, face_rc, {0, 255, 0},  4);
 
-        const float *y = out_y_fc[idx].ptr<float>();
-        const float *p = out_p_fc[idx].ptr<float>();
-        const float *rr = out_r_fc[idx].ptr<float>();
-        float yaw = *y;
-        float pitch = *p;
-        float roll = *rr;
-        //std::cout<<yaw<<' '<<pitch<<' '<<roll<<std::endl;
-        int cx = static_cast<int>(rc.x + rc.width/2);
-        int cy = static_cast<int>(rc.y + rc.height/2);
+        // Drawing rotation axises
+        const float *y_ptr = out_y_fc[idx].ptr<float>();
+        const float *p_ptr = out_p_fc[idx].ptr<float>();
+        const float *r_ptr = out_r_fc[idx].ptr<float>();
+        float yaw = *y_ptr;
+        float pitch = *p_ptr;
+        float roll = *r_ptr;
+        int cx = static_cast<int>(face_rc.x + face_rc.width/2);
+        int cy = static_cast<int>(face_rc.y + face_rc.height/2);
         cv::Point cpoint(cx, cy);
 
         yaw   *= CV_PI / 180.0;
@@ -298,8 +308,22 @@ void DrawResults(cv::Mat &frame,
         cv::line(frame, p1, p2, zAxisColor, axisThickness);
         cv::circle(frame, p2, 3, zAxisColor, axisThickness);
 
+        //Drawing facial landmarks
+        const float *landmarks = out_landmarks[idx].ptr<float>();
+
+        size_t n_lm = 70;// fixme: hard-coded landmarks num.
+                         // See flm_ned docomentation
+        for (size_t i_lm = 0UL; i_lm < n_lm / 2; ++i_lm) {
+            float normed_x = landmarks[2 * i_lm];
+            float normed_y = landmarks[2 * i_lm + 1];
+
+            int x_lm = face_rc.x + static_cast<int>(face_rc.width * normed_x);
+            int y_lm = face_rc.y + static_cast<int>(face_rc.height * normed_y);
+            cv::circle(frame, cv::Point(x_lm, y_lm), 1 + static_cast<int>(0.012 * face_rc.width), cv::Scalar(0, 255, 255), -1);
+        }
+
         cv::putText(frame, ss.str(),
-                    cv::Point(rc.x, rc.y - ATTRIB_OFFSET),
+                    cv::Point(face_rc.x, face_rc.y - ATTRIB_OFFSET),
                     cv::FONT_HERSHEY_COMPLEX_SMALL,
                     1,
                     cv::Scalar(0, 0, 255));
@@ -363,16 +387,27 @@ int main(int argc, char *argv[])
             cv::GArray<cv::GMat> genders;
             std::tie(ages, genders) = cv::gapi::infer<custom::AgeGender>(faces, in);
 
+            // Recognize axis–angle representation a on every face.
+            // ROI-list-oriented infer<>() is used here as well.
+            // Inference results are returned in form of list (GArray<>).
+            // custom::HeadPose network produce a three outputs (yaw, pitch and roll).
+            // Since there're three outputs, infer<> return three arrays (via std::tuple).
+            cv::GArray<cv::GMat> y_fc;
+            cv::GArray<cv::GMat> p_fc;
+            cv::GArray<cv::GMat> r_fc;
+            std::tie(y_fc, p_fc, r_fc) = cv::gapi::infer<custom::HeadPose>(faces, in);
+
+            // Recognize landmarks on every face.
+            // ROI-list-oriented infer<>() is used here as well.
+            // Since custom::FacialLandmark network produce a single output, only one
+            // GArray<> is returned here.
+            cv::GArray<cv::GMat> landmarks = cv::gapi::infer<custom::FacialLandmark>(faces, in);
+
             // Recognize emotions on every face.
             // ROI-list-oriented infer<>() is used here as well.
             // Since custom::Emotions network produce a single output, only one
             // GArray<> is returned here.
             cv::GArray<cv::GMat> emotions = cv::gapi::infer<custom::Emotions>(faces, in);
-            
-            cv::GArray<cv::GMat> y_fc;
-            cv::GArray<cv::GMat> p_fc;
-            cv::GArray<cv::GMat> r_fc;
-            std::tie(y_fc, p_fc, r_fc) = cv::gapi::infer<custom::HeadPose>(faces, in);
 
             // Return the decoded frame as a result as well.
             // Input matrix can't be specified as output one, so use copy() here
@@ -382,7 +417,8 @@ int main(int argc, char *argv[])
             // Now specify the computation's boundaries - our pipeline consumes
             // one images and produces five outputs.
             return cv::GComputation(cv::GIn(in),
-                                    cv::GOut(frame, faces, ages, genders, y_fc, p_fc, r_fc, emotions));
+                                    cv::GOut(frame, faces, ages, genders, y_fc, p_fc, r_fc,
+                                            landmarks, emotions));
         });
 
     // Note: it might be very useful to have dimensions loaded at this point!
@@ -410,22 +446,28 @@ int main(int argc, char *argv[])
         cmd.get<std::string>("aged"),   // read cmd args: device specifier
     }.cfgOutputLayers({ "age_conv3", "prob" });
 
-    auto emo_net = cv::gapi::ie::Params<custom::Emotions> {
-        cmd.get<std::string>("emom"),   // read cmd args: path to topology IR
-        cmd.get<std::string>("emow"),   // read cmd args: path to weights
-        cmd.get<std::string>("emod"),   // read cmd args: device specifier
-    };
-
     auto hp_net = cv::gapi::ie::Params<custom::HeadPose> {
         cmd.get<std::string>("hpm"),   // read cmd args: path to topology IR
         cmd.get<std::string>("hpw"),   // read cmd args: path to weights
         cmd.get<std::string>("hpd"),   // read cmd args: device specifier
     }.cfgOutputLayers({ "angle_y_fc", "angle_p_fc", "angle_r_fc" });
 
+    auto lm_net = cv::gapi::ie::Params<custom::FacialLandmark> {
+        cmd.get<std::string>("lmm"),   // read cmd args: path to topology IR
+        cmd.get<std::string>("lmw"),   // read cmd args: path to weights
+        cmd.get<std::string>("lmd"),   // read cmd args: device specifier
+    };
+
+    auto emo_net = cv::gapi::ie::Params<custom::Emotions> {
+        cmd.get<std::string>("emom"),   // read cmd args: path to topology IR
+        cmd.get<std::string>("emow"),   // read cmd args: path to weights
+        cmd.get<std::string>("emod"),   // read cmd args: device specifier
+    };
+
     // Form a kernel package (with a single OpenCV-based implementation of our
     // post-processing) and a network package (holding our three networks).x
     auto kernels = cv::gapi::kernels<custom::OCVPostProc>();
-    auto networks = cv::gapi::networks(det_net, age_net, emo_net, hp_net);
+    auto networks = cv::gapi::networks(det_net, age_net, hp_net, lm_net, emo_net);
 
     // Compile our pipeline for a specific input image format (TBD - can be relaxed)
     // and pass our kernels & networks as parameters.
@@ -446,13 +488,15 @@ int main(int argc, char *argv[])
     std::vector<cv::Mat> out_ages;
     std::vector<cv::Mat> out_genders;
     std::vector<cv::Mat> out_y_fc, out_p_fc, out_r_fc; 
+    std::vector<cv::Mat> out_landmarks;
     std::vector<cv::Mat> out_emotions;
     std::size_t frames = 0u;
 
     // Implement different execution policies depending on the display option
     // for the best performance.
     while (cc.running()) {
-        auto out_vector = cv::gout(frame, faces, out_ages, out_genders, out_y_fc, out_p_fc, out_r_fc, out_emotions);
+        auto out_vector = cv::gout(frame, faces, out_ages, out_genders, out_y_fc, out_p_fc, out_r_fc,
+                                    out_landmarks ,out_emotions);
         if (no_show) {
             // This is purely a video processing. No need to balance with UI rendering.
             // Use a blocking pull() to obtain data. Break the loop if the stream is over.
@@ -466,7 +510,8 @@ int main(int argc, char *argv[])
         }
         // At this point we have data for sure (obtained in either blocking or non-blocking way).
         frames++;
-        labels::DrawResults(frame, faces, out_ages, out_genders, out_y_fc, out_p_fc, out_r_fc, out_emotions);
+        labels::DrawResults(frame, faces, out_ages, out_genders, out_y_fc, out_p_fc, out_r_fc,
+                            out_landmarks, out_emotions);
         labels::DrawFPS(frame, frames, avg.fps(frames));
         if (!no_show) cv::imshow("Out", frame);
     }
