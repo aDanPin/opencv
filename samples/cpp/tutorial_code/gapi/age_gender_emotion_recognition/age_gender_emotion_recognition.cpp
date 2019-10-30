@@ -30,6 +30,9 @@ const std::string keys =
     "{ emom   |   | IE emotions recognition model IR }"
     "{ emow   |   | IE emotions recognition model weights }"
     "{ emod   |   | IE emotions recognition model device }"
+    "{ hpm    |   | IE head pose recognition model IR }"
+    "{ hpw    |   | IE head pose recognition model weights }"
+    "{ hpd    |   | IE head pose recognition model device }"
     "{ pure   |   | When set, no output is displayed. Useful for benchmarking }";
 
 struct Avg {
@@ -82,6 +85,10 @@ G_API_NET(Faces, <cv::GMat(cv::GMat)>, "face-detector");
 using AGInfo = std::tuple<cv::GMat, cv::GMat>;
 G_API_NET(AgeGender, <AGInfo(cv::GMat)>,   "age-gender-recoginition");
 
+// Head pose recognition - takes one Mat, returns another.
+using HPInfo = std::tuple<cv::GMat, cv::GMat, cv::GMat>;
+G_API_NET(HeadPose, <HPInfo(cv::GMat)>,   "head-pose-recoginition");
+
 // Emotion recognition - takes one Mat, returns another.
 G_API_NET(Emotions, <cv::GMat(cv::GMat)>, "emotions-recognition");
 
@@ -133,6 +140,30 @@ GAPI_OCV_KERNEL(OCVPostProc, PostProc) {
             rc.y      = static_cast<int>(rc_top    * upscale.height);
             rc.width  = static_cast<int>(rc_right  * upscale.width)  - rc.x;
             rc.height = static_cast<int>(rc_bottom * upscale.height) - rc.y;
+
+            // Make square and enlarge face bounding box for more robust operation of face analytics networks
+            int bb_width = rc.width;
+            int bb_height = rc.height;
+
+            int bb_center_x = rc.x + bb_width / 2;
+            int bb_center_y = rc.y + bb_height / 2;
+
+            int max_of_sizes = std::max(bb_width, bb_height);
+            
+            //bb_enlarge_coefficient, dx_coef, dy_coef is a omz flags
+            //usualy it's 1.0, 1.0 and 1.2
+            float bb_dx_coefficient = 1.0;
+            float bb_dy_coefficient = 1.0;
+            float bb_enlarge_coefficient = 1.2;
+            int bb_new_width = static_cast<int>(bb_enlarge_coefficient * max_of_sizes);
+            int bb_new_height = static_cast<int>(bb_enlarge_coefficient * max_of_sizes);
+
+            rc.x = bb_center_x - static_cast<int>(std::floor(bb_dx_coefficient * bb_new_width / 2));
+            rc.y = bb_center_y - static_cast<int>(std::floor(bb_dy_coefficient * bb_new_height / 2));
+
+            rc.width = bb_new_width;
+            rc.height = bb_new_height;
+
             out_faces.push_back(rc & surface);
         }
     }
@@ -151,10 +182,16 @@ void DrawResults(cv::Mat &frame,
                  const std::vector<cv::Rect> &faces,
                  const std::vector<cv::Mat>  &out_ages,
                  const std::vector<cv::Mat>  &out_genders,
+                 const std::vector<cv::Mat>  &out_y_fc, 
+                 const std::vector<cv::Mat>  &out_p_fc, 
+                 const std::vector<cv::Mat>  &out_r_fc,
                  const std::vector<cv::Mat>  &out_emotions) {
     CV_Assert(faces.size() == out_ages.size());
     CV_Assert(faces.size() == out_genders.size());
     CV_Assert(faces.size() == out_emotions.size());
+    CV_Assert(faces.size() == out_y_fc.size());
+    CV_Assert(faces.size() == out_p_fc.size());
+    CV_Assert(faces.size() == out_r_fc.size());
 
     for (auto it = faces.begin(); it != faces.end(); ++it) {
         const auto idx = std::distance(faces.begin(), it);
@@ -175,6 +212,92 @@ void DrawResults(cv::Mat &frame,
 
         const int ATTRIB_OFFSET = 15;
         cv::rectangle(frame, rc, {0, 255, 0},  4);
+
+        const float *y = out_y_fc[idx].ptr<float>();
+        const float *p = out_p_fc[idx].ptr<float>();
+        const float *rr = out_r_fc[idx].ptr<float>();
+        float yaw = *y;
+        float pitch = *p;
+        float roll = *rr;
+        //std::cout<<yaw<<' '<<pitch<<' '<<roll<<std::endl;
+        int cx = static_cast<int>(rc.x + rc.width/2);
+        int cy = static_cast<int>(rc.y + rc.height/2);
+        cv::Point cpoint(cx, cy);
+
+        yaw   *= CV_PI / 180.0;
+        pitch *= CV_PI / 180.0;
+        roll  *= CV_PI / 180.0;
+
+        cv::Matx33f Rx(1, 0, 0,
+                       0, static_cast<float>(cos(pitch)), static_cast<float>(-sin(pitch)),
+                       0, static_cast<float>(sin(pitch)), static_cast<float>(cos(pitch)));  
+
+        cv::Matx33f Ry(static_cast<float>(cos(yaw)), 0, static_cast<float>(-sin(yaw)),
+                       0, 1, 0,
+                       static_cast<float>(sin(yaw)), 0, static_cast<float>(cos(yaw)));
+
+        cv::Matx33f Rz(static_cast<float>(cos(roll)), static_cast<float>(-sin(roll)), 0,
+                       static_cast<float>(sin(roll)),  static_cast<float>(cos(roll)), 0,
+                       0, 0, 1);
+
+
+        auto r = cv::Mat(Rz*Ry*Rx);
+
+        cv::Mat cameraMatrix = cv::Mat::zeros(3, 3, CV_32F);
+        cameraMatrix.at<float>(0) = 950.0;
+        cameraMatrix.at<float>(2) = static_cast<float>(frame.cols / 2);
+        cameraMatrix.at<float>(4) = 950.0;
+        cameraMatrix.at<float>(5) = static_cast<float>(frame.rows / 2);
+        cameraMatrix.at<float>(8) = 1;
+
+        cv::Mat xAxis(3, 1, CV_32F), yAxis(3, 1, CV_32F), zAxis(3, 1, CV_32F), zAxis1(3, 1, CV_32F);
+
+        float scale = 50.0;
+        xAxis.at<float>(0) = 1.0 * scale;
+        xAxis.at<float>(1) = 0;
+        xAxis.at<float>(2) = 0;
+
+        yAxis.at<float>(0) = 0;
+        yAxis.at<float>(1) = -1.0 * scale;
+        yAxis.at<float>(2) = 0;
+
+        zAxis.at<float>(0) = 0;
+        zAxis.at<float>(1) = 0;
+        zAxis.at<float>(2) = -1.0 * scale;
+
+        zAxis1.at<float>(0) = 0;
+        zAxis1.at<float>(1) = 0;
+        zAxis1.at<float>(2) = 1.0 * scale;
+
+        cv::Point p1, p2;
+        cv::Scalar xAxisColor(0, 0, 255), yAxisColor(0, 255, 0), zAxisColor(255, 0, 0);
+
+        cv::Mat o(3, 1, CV_32F, cv::Scalar(0));
+        o.at<float>(2) = cameraMatrix.at<float>(0);
+
+        xAxis = r * xAxis + o;;
+        yAxis = r * yAxis + o;;
+        zAxis = r * zAxis + o;;
+        zAxis1 = r * zAxis1 + o;;
+
+        int axisThickness = 3;
+
+        p2.x = static_cast<int>((xAxis.at<float>(0) / xAxis.at<float>(2) * cameraMatrix.at<float>(0)) + cpoint.x);
+        p2.y = static_cast<int>((xAxis.at<float>(1) / xAxis.at<float>(2) * cameraMatrix.at<float>(4)) + cpoint.y);
+        cv::line(frame, cv::Point(static_cast<int>(cpoint.x), static_cast<int>(cpoint.y)), p2, xAxisColor, axisThickness);
+
+        p2.x = static_cast<int>((yAxis.at<float>(0) / yAxis.at<float>(2) * cameraMatrix.at<float>(0)) + cpoint.x);
+        p2.y = static_cast<int>((yAxis.at<float>(1) / yAxis.at<float>(2) * cameraMatrix.at<float>(4)) + cpoint.y);
+        cv::line(frame, cv::Point(static_cast<int>(cpoint.x), static_cast<int>(cpoint.y)), p2, yAxisColor, axisThickness);
+
+        p1.x = static_cast<int>((zAxis1.at<float>(0) / zAxis1.at<float>(2) * cameraMatrix.at<float>(0)) + cpoint.x);
+        p1.y = static_cast<int>((zAxis1.at<float>(1) / zAxis1.at<float>(2) * cameraMatrix.at<float>(4)) + cpoint.y);
+
+        p2.x = static_cast<int>((zAxis.at<float>(0) / zAxis.at<float>(2) * cameraMatrix.at<float>(0)) + cpoint.x);
+        p2.y = static_cast<int>((zAxis.at<float>(1) / zAxis.at<float>(2) * cameraMatrix.at<float>(4)) + cpoint.y);
+        cv::line(frame, p1, p2, zAxisColor, axisThickness);
+        cv::circle(frame, p2, 3, zAxisColor, axisThickness);
+
         cv::putText(frame, ss.str(),
                     cv::Point(rc.x, rc.y - ATTRIB_OFFSET),
                     cv::FONT_HERSHEY_COMPLEX_SMALL,
@@ -245,6 +368,11 @@ int main(int argc, char *argv[])
             // Since custom::Emotions network produce a single output, only one
             // GArray<> is returned here.
             cv::GArray<cv::GMat> emotions = cv::gapi::infer<custom::Emotions>(faces, in);
+            
+            cv::GArray<cv::GMat> y_fc;
+            cv::GArray<cv::GMat> p_fc;
+            cv::GArray<cv::GMat> r_fc;
+            std::tie(y_fc, p_fc, r_fc) = cv::gapi::infer<custom::HeadPose>(faces, in);
 
             // Return the decoded frame as a result as well.
             // Input matrix can't be specified as output one, so use copy() here
@@ -254,7 +382,7 @@ int main(int argc, char *argv[])
             // Now specify the computation's boundaries - our pipeline consumes
             // one images and produces five outputs.
             return cv::GComputation(cv::GIn(in),
-                                    cv::GOut(frame, faces, ages, genders, emotions));
+                                    cv::GOut(frame, faces, ages, genders, y_fc, p_fc, r_fc, emotions));
         });
 
     // Note: it might be very useful to have dimensions loaded at this point!
@@ -288,16 +416,22 @@ int main(int argc, char *argv[])
         cmd.get<std::string>("emod"),   // read cmd args: device specifier
     };
 
+    auto hp_net = cv::gapi::ie::Params<custom::HeadPose> {
+        cmd.get<std::string>("hpm"),   // read cmd args: path to topology IR
+        cmd.get<std::string>("hpw"),   // read cmd args: path to weights
+        cmd.get<std::string>("hpd"),   // read cmd args: device specifier
+    }.cfgOutputLayers({ "angle_y_fc", "angle_p_fc", "angle_r_fc" });
+
     // Form a kernel package (with a single OpenCV-based implementation of our
     // post-processing) and a network package (holding our three networks).x
     auto kernels = cv::gapi::kernels<custom::OCVPostProc>();
-    auto networks = cv::gapi::networks(det_net, age_net, emo_net);
+    auto networks = cv::gapi::networks(det_net, age_net, emo_net, hp_net);
 
     // Compile our pipeline for a specific input image format (TBD - can be relaxed)
     // and pass our kernels & networks as parameters.
     // This is the place where G-API learns which networks & kernels we're actually
     // operating with (the graph description itself known nothing about that).
-    auto cc = pp.compileStreaming(cv::GMatDesc{CV_8U,3,cv::Size(1280,720)},
+    auto cc = pp.compileStreaming(cv::GMatDesc{CV_8U,3,cv::Size(768,432)},
                                   cv::compile_args(kernels, networks));
 
     std::cout << "Reading " << input << std::endl;
@@ -311,13 +445,14 @@ int main(int argc, char *argv[])
     std::vector<cv::Rect> faces;
     std::vector<cv::Mat> out_ages;
     std::vector<cv::Mat> out_genders;
+    std::vector<cv::Mat> out_y_fc, out_p_fc, out_r_fc; 
     std::vector<cv::Mat> out_emotions;
     std::size_t frames = 0u;
 
     // Implement different execution policies depending on the display option
     // for the best performance.
     while (cc.running()) {
-        auto out_vector = cv::gout(frame, faces, out_ages, out_genders, out_emotions);
+        auto out_vector = cv::gout(frame, faces, out_ages, out_genders, out_y_fc, out_p_fc, out_r_fc, out_emotions);
         if (no_show) {
             // This is purely a video processing. No need to balance with UI rendering.
             // Use a blocking pull() to obtain data. Break the loop if the stream is over.
@@ -331,7 +466,7 @@ int main(int argc, char *argv[])
         }
         // At this point we have data for sure (obtained in either blocking or non-blocking way).
         frames++;
-        labels::DrawResults(frame, faces, out_ages, out_genders, out_emotions);
+        labels::DrawResults(frame, faces, out_ages, out_genders, out_y_fc, out_p_fc, out_r_fc, out_emotions);
         labels::DrawFPS(frame, frames, avg.fps(frames));
         if (!no_show) cv::imshow("Out", frame);
     }
