@@ -20,13 +20,13 @@ namespace opencv_test
 
   //------------------------------------------------------------------------------
 
-    class RenderTestTexts : public TestPerfParams<tuple<compare_f, MatType, cv::Size, cv::GCompileArgs>> {};
-    class RenderTestRects : public TestPerfParams<tuple<compare_f, MatType, cv::Size, cv::GCompileArgs>> {};
-    class RenderTestCircles : public TestPerfParams<tuple<compare_f, MatType, cv::Size, cv::GCompileArgs>> {};
-    class RenderTestLines : public TestPerfParams<tuple<compare_f, MatType, cv::Size, cv::GCompileArgs>> {};
-    class RenderTestMosaics : public TestPerfParams<tuple<compare_f, MatType, cv::Size, cv::GCompileArgs>> {};
-    class RenderTestImages : public TestPerfParams<tuple<compare_f, MatType, cv::Size, cv::GCompileArgs>> {};
-    class RenderTestPolylines : public TestPerfParams<tuple<compare_f, MatType, cv::Size, cv::GCompileArgs>> {};
+    class RenderTestRects : public TestPerfParams<tuple<MatType, cv::Size>> {};
+    class RenderTestTexts : public TestPerfParams<tuple<MatType, cv::Size>> {};
+    class RenderTestCircles : public TestPerfParams<tuple<MatType, cv::Size>> {};
+    class RenderTestLines : public TestPerfParams<tuple<MatType, cv::Size>> {};
+    class RenderTestMosaics : public TestPerfParams<tuple<MatType, cv::Size>> {};
+    class RenderTestImages : public TestPerfParams<tuple<MatType, cv::Size>> {};
+    class RenderTestPolylines : public TestPerfParams<tuple<MatType, cv::Size>> {};
 
 }
 
