@@ -10,7 +10,7 @@
 
 #include <iostream>
 
-#include "gapi_render_perf_tests.hpp"
+#include "../common/gapi_render_perf_tests.hpp"
 
 #include "../../src/api/render_priv.hpp"
 
@@ -90,6 +90,7 @@ namespace opencv_test
         }
     }
 
+    // TODO: remove this code duplication with /gapi/test/common/gapi_render_tests.hpp
     void blendImageRef(cv::Mat& mat, const cv::Point& org, const cv::Mat& img, const cv::Mat& alpha)
     {
         auto roi = mat(cv::Rect(org, img.size()));
@@ -112,9 +113,31 @@ namespace opencv_test
 
   }
 
+  INSTANTIATE_TEST_CASE_P(RenderTestTexts, RenderTestTexts,
+      Combine(Values(std::string("Some text")),
+              Values(szVGA, sz720p, sz1080p)));
+
+  INSTANTIATE_TEST_CASE_P(RenderTestRects, RenderTestRects,
+      Combine(/*Values(CV_8UC2, CV_8UC1), */
+                              Values(szVGA, sz720p, sz1080p)));
+
+  INSTANTIATE_TEST_CASE_P(RenderTestCircles, RenderTestCircles,
+      Combine(Values(szVGA, sz720p, sz1080p)));
+
+  INSTANTIATE_TEST_CASE_P(RenderTestLines, RenderTestCircles,
+      Combine(Values(szVGA, sz720p, sz1080p)));
+
+  INSTANTIATE_TEST_CASE_P(RenderTestMosaics, RenderTestCircles,
+      Combine(Values(szVGA, sz720p, sz1080p)));
+
+  INSTANTIATE_TEST_CASE_P(RenderTestImages, RenderTestCircles,
+      Combine(Values(szVGA, sz720p, sz1080p)));
+
+  INSTANTIATE_TEST_CASE_P(RenderTestPolylines, RenderTestPolylines,
+      Combine(Values(szVGA, sz720p, sz1080p)));
+
 PERF_TEST_P_(RenderTestTexts, RenderTextsPerformanceBGROCVTest)
 {
-    std::string text("SomeText");
     cv::Point org(200, 200);
     int ff = FONT_HERSHEY_SIMPLEX;
     double fs = 2.0;
@@ -122,10 +145,11 @@ PERF_TEST_P_(RenderTestTexts, RenderTextsPerformanceBGROCVTest)
     int thick = 2;
     int lt = LINE_8;
     bool blo = false;
+    MatType type = CV_8UC3;
 
-    MatType type = 0;
+    std::string text;
     cv::Size sz;
-    std::tie(type, sz) = GetParam();
+    std::tie(text, sz) = GetParam();
 
     cv::Mat gapi_mat = cv::Mat(sz, type);
     cv::Mat ref_mat(gapi_mat);
@@ -163,7 +187,6 @@ PERF_TEST_P_(RenderTestTexts, RenderTextsPerformanceBGROCVTest)
 
 PERF_TEST_P_(RenderTestTexts, RenderTextsPerformanceNV12OCVTest)
 {
-    std::string text("SomeText");
     cv::Point org(200, 200);
     int ff = FONT_HERSHEY_SIMPLEX;
     double fs = 2.0;
@@ -172,9 +195,9 @@ PERF_TEST_P_(RenderTestTexts, RenderTextsPerformanceNV12OCVTest)
     int lt = LINE_8;
     bool blo = false;
 
-    MatType type = 0;
+    std::string text;
     cv::Size sz;
-    std::tie(type, sz) = GetParam();
+    std::tie(text, sz) = GetParam();
 
     cv::Mat y_ref_mat, uv_ref_mat;
 
@@ -231,8 +254,8 @@ PERF_TEST_P_(RenderTestRects, RenderRectsPerformanceBGROCVTest)
     int thick = 2;
     int lt = LINE_8;
     int shift = 0;
+    MatType type = CV_8UC3;
 
-    MatType type = 0;
     cv::Size sz;
     std::tie(type, sz) = GetParam();
 
@@ -278,7 +301,7 @@ PERF_TEST_P_(RenderTestRects, RenderRectsPerformanceNV12OCVTest)
     int lt = LINE_8;
     int shift = 0;
 
-    MatType type = 0;
+    MatType type;
     cv::Size sz;
     std::tie(type, sz) = GetParam();
 
@@ -339,10 +362,10 @@ PERF_TEST_P_(RenderTestCircles, RenderCirclesPerformanceBGROCVTest)
     int thick = 2;
     int lt = LINE_8;
     int shift = 0;
+    MatType type = CV_8UC3;
 
-    MatType type = 0;
     cv::Size sz;
-    std::tie(type, sz) = GetParam();
+    std::tie(sz) = GetParam();
 
     cv::Mat gapi_mat = cv::Mat(sz, type);
     cv::Mat ref_mat(gapi_mat);
@@ -388,9 +411,8 @@ PERF_TEST_P_(RenderTestCircles, RenderCirclesPerformanceNV12OCVTest)
     int lt = LINE_8;
     int shift = 0;
 
-    MatType type = 0;
     cv::Size sz;
-    std::tie(type, sz) = GetParam();
+    std::tie(sz) = GetParam();
 
     cv::Mat y_ref_mat, uv_ref_mat;
 
@@ -449,10 +471,10 @@ PERF_TEST_P_(RenderTestLines, RenderLinesPerformanceBGROCVTest)
     int thick = 2;
     int lt = LINE_8;
     int shift = 0;
+    MatType type = CV_8UC3;
 
-    MatType type = 0;
     cv::Size sz;
-    std::tie(type, sz) = GetParam();
+    std::tie(sz) = GetParam();
 
     cv::Mat gapi_mat = cv::Mat(sz, type);
     cv::Mat ref_mat(gapi_mat);
@@ -498,9 +520,8 @@ PERF_TEST_P_(RenderTestLines, RenderLinesPerformanceNV12OCVTest)
     int lt = LINE_8;
     int shift = 0;
 
-    MatType type = 0;
     cv::Size sz;
-    std::tie(type, sz) = GetParam();
+    std::tie(sz) = GetParam();
 
     cv::Mat y_ref_mat, uv_ref_mat;
 
@@ -556,10 +577,10 @@ PERF_TEST_P_(RenderTestMosaics, RenderMosaicsPerformanceBGROCVTest)
     cv::Rect mos(100, 100, 200, 200);
     int cellsz = 25;
     int decim = 0;
+    MatType type = CV_8UC3;
 
-    MatType type = 0;
     cv::Size sz;
-    std::tie(type, sz) = GetParam();
+    std::tie(sz) = GetParam();
 
     cv::Mat gapi_mat = cv::Mat(sz, type);
     cv::Mat ref_mat(gapi_mat);
@@ -601,9 +622,8 @@ PERF_TEST_P_(RenderTestMosaics, RenderMosaicsPerformanceNV12OCVTest)
     int cellsz = 25;
     int decim = 0;
 
-    MatType type = 0;
     cv::Size sz;
-    std::tie(type, sz) = GetParam();
+    std::tie(sz) = GetParam();
 
     cv::Mat y_ref_mat, uv_ref_mat;
 
@@ -659,10 +679,10 @@ PERF_TEST_P_(RenderTestImages, RenderImagesPerformanceBGROCVTest)
     cv::Rect rect(100, 100, 200, 200);
     cv::Scalar color(100, 150, 60);
     double  transparency = 1.0;
+    MatType type = CV_8UC3;
 
-    MatType type = 0;
     cv::Size sz;
-    std::tie(type, sz) = GetParam();
+    std::tie(sz) = GetParam();
 
     cv::Mat gapi_mat = cv::Mat(sz, type);
     cv::Mat ref_mat(gapi_mat);
@@ -710,9 +730,8 @@ PERF_TEST_P_(RenderTestImages, RenderImagesPerformanceNV12OCVTest)
     cv::Scalar color(100, 150, 60);
     double  transparency = 1.0;
 
-    MatType type = 0;
     cv::Size sz;
-    std::tie(type, sz) = GetParam();
+    std::tie(sz) = GetParam();
 
     cv::Mat y_ref_mat, uv_ref_mat;
 
@@ -777,10 +796,10 @@ PERF_TEST_P_(RenderTestPolylines, RenderPolylinesPerformanceBGROCVTest)
     int thick = 2;
     int lt = LINE_8;
     int shift = 0;
+    MatType type = CV_8UC3;
 
-    MatType type = 0;
     cv::Size sz;
-    std::tie(type, sz) = GetParam();
+    std::tie(sz) = GetParam();
 
     cv::Mat gapi_mat = cv::Mat(sz, type);
     cv::Mat ref_mat(gapi_mat);
@@ -826,9 +845,8 @@ PERF_TEST_P_(RenderTestPolylines, RenderPolylinesPerformanceNV12OCVTest)
     int lt = LINE_8;
     int shift = 0;
 
-    MatType type = 0;
     cv::Size sz;
-    std::tie(type, sz) = GetParam();
+    std::tie(sz) = GetParam();
 
     cv::Mat y_ref_mat, uv_ref_mat;
 

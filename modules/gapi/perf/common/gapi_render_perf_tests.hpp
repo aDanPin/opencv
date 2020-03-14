@@ -13,6 +13,8 @@
 #include "../../test/common/gapi_tests_common.hpp"
 #include <opencv2/gapi/imgproc.hpp>
 
+#include <string>
+
 namespace opencv_test
 {
 
@@ -20,14 +22,14 @@ namespace opencv_test
 
   //------------------------------------------------------------------------------
 
-    class RenderTestRects : public TestPerfParams<tuple<MatType, cv::Size>> {};
-    class RenderTestTexts : public TestPerfParams<tuple<MatType, cv::Size>> {};
-    class RenderTestCircles : public TestPerfParams<tuple<MatType, cv::Size>> {};
-    class RenderTestLines : public TestPerfParams<tuple<MatType, cv::Size>> {};
-    class RenderTestMosaics : public TestPerfParams<tuple<MatType, cv::Size>> {};
-    class RenderTestImages : public TestPerfParams<tuple<MatType, cv::Size>> {};
-    class RenderTestPolylines : public TestPerfParams<tuple<MatType, cv::Size>> {};
+    class RenderTestTexts : public TestPerfParams<tuple<std::string, cv::Size>> {};
+    class RenderTestRects : public TestPerfParams<tuple<cv::Size>> {};
+    class RenderTestCircles : public TestPerfParams<tuple<cv::Size>> {};
+    class RenderTestLines : public TestPerfParams<tuple<cv::Size>> {};
+    class RenderTestMosaics : public TestPerfParams<tuple<cv::Size>> {};
+    class RenderTestImages : public TestPerfParams<tuple<cv::Size>> {};
+    class RenderTestPolylines : public TestPerfParams<tuple<cv::Size>> {};
 
-}
+} // opencv_test
 
 #endif // OPENCV_GAPI_RENDER_PERF_TESTS_HPP
