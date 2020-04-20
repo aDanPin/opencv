@@ -60,7 +60,20 @@ public:
     explicit GIOProtoArgs(GProtoArgs &&args)      : m_args(std::move(args)) {}
 
     GProtoArgs m_args;
+//    FIXME: Make it work
+    template<typename Tg>
+    friend GIOProtoArgs<Tg>& operator += (GIOProtoArgs<Tg> &lhs, const GIOProtoArgs<Tg> &rhs);
 };
+
+
+template<typename Tg>
+GIOProtoArgs<Tg>& operator += (GIOProtoArgs<Tg> &lhs, const GIOProtoArgs<Tg> &rhs) {
+    lhs.m_args += rhs.m_args;
+    return lhs;
+}
+//        lhs.m_args += rhs.m_args;
+//        return lhs;
+
 
 struct In_Tag{};
 struct Out_Tag{};
