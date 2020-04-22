@@ -65,18 +65,23 @@ public:
     friend GIOProtoArgs<Tg>& operator += (GIOProtoArgs<Tg> &lhs, const GIOProtoArgs<Tg> &rhs);
 };
 
+struct In_Tag{};
+struct Out_Tag{};
 
 template<typename Tg>
 GIOProtoArgs<Tg>& operator += (GIOProtoArgs<Tg> &lhs, const GIOProtoArgs<Tg> &rhs) {
-    lhs.m_args += rhs.m_args;
+    lhs.m_args.reserve(lhs.m_args.size() + rhs.m_args.size());
+    lhs.m_args.insert(lhs.m_args.end(), rhs.m_args.begin(), rhs.m_args.end());
     return lhs;
 }
-//        lhs.m_args += rhs.m_args;
-//        return lhs;
 
 
-struct In_Tag{};
-struct Out_Tag{};
+//template<Out_Tag>
+//GIOProtoArgs<Out_Tag>& operator += (GIOProtoArgs<Out_Tag> &lhs, const GIOProtoArgs<Out_Tag> &rhs) {
+//    lhs.m_args += rhs.m_args;
+//    return lhs;
+//}
+
 
 using GProtoInputArgs  = GIOProtoArgs<In_Tag>;
 using GProtoOutputArgs = GIOProtoArgs<Out_Tag>;
