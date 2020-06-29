@@ -30,7 +30,52 @@ namespace opencv_test
         cv::Mat out_mat1;
         cv::Mat out_mat2;
 
-        EXPECT_NO_THROW(cc.apply(in_mat1, out_mat1, out_mat1));
+        EXPECT_NO_THROW(cc.apply(cv::gin(in_mat1), cv::gout(out_mat1, out_mat1)));
     }
 
+    TEST(GenericGraph, NoRecompileWithSameMeta1)
+    {
+        cv::GComputation cc([]() {
+            cv::GMat in1;
+            cv::GProtoInputArgs ins = GIn(in1);
+
+            cv::GMat in2;
+            ins += GIn(in2);
+
+            cv::GMat out = cv::gapi::copy(in1 + in2);
+
+            return cv::GComputation(std::move(ins), GOut(out));
+        });
+
+        cv::Mat in_mat1 = cv::Mat::eye(32, 32, CV_8UC1);
+        cv::Mat in_mat2 = cv::Mat::eye(32, 32, CV_8UC1);
+        cv::Mat out_mat;
+
+        EXPECT_NO_THROW(cc.apply(cv::gin(in_mat1, in_mat2), cv::gout(out_mat)));
+    }
+
+    TEST(GenericGraph, NoRecompileWithSameMeta2)
+    {
+        cv::GComputation cc([]() {
+            cv::GMat in1;
+            cv::GProtoInputArgs ins = GIn(in1);
+
+            cv::GMat in2;
+            ins += GIn(in2);
+
+            cv::GMat out1 = cv::gapi::copy(in1 + in2);
+            cv::GProtoOutputArgs outs = GOut(out1);
+
+            cv::GMat out2 = cv::gapi::copy(in1 + in2);
+            outs += GOut(out2);
+
+            return cv::GComputation(std::move(ins), std::move(outs));
+        });
+
+        cv::Mat in_mat1 = cv::Mat::eye(32, 32, CV_8UC1);
+        cv::Mat in_mat2 = cv::Mat::eye(32, 32, CV_8UC1);
+        cv::Mat out_mat1, out_mat2;
+
+        EXPECT_NO_THROW(cc.apply(cv::gin(in_mat1, in_mat2), cv::gout(out_mat1, out_mat2)));
+    }
 } // namespace opencv_test
