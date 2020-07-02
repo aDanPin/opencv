@@ -135,6 +135,14 @@ using GRunArgP = util::variant<
     >;
 using GRunArgsP = std::vector<GRunArgP>;
 
+static std::vector<GRunArgP>& operator += (std::vector<GRunArgP> &lhs, const std::vector<GRunArgP> &rhs);
+
+static std::vector<GRunArgP>& operator += (std::vector<GRunArgP> &lhs, const std::vector<GRunArgP> &rhs) {
+    lhs.reserve(lhs.size() + rhs.size());
+    lhs.insert(lhs.end(), rhs.begin(), rhs.end());
+    return lhs;
+}
+
 template<typename... Ts> inline GRunArgs gin(const Ts&... args)
 {
     return GRunArgs{ GRunArg(detail::wrap_host_helper<Ts>::wrap_in(args))... };

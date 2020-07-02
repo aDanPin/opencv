@@ -75,14 +75,6 @@ GIOProtoArgs<Tg>& operator += (GIOProtoArgs<Tg> &lhs, const GIOProtoArgs<Tg> &rh
     return lhs;
 }
 
-
-//template<Out_Tag>
-//GIOProtoArgs<Out_Tag>& operator += (GIOProtoArgs<Out_Tag> &lhs, const GIOProtoArgs<Out_Tag> &rhs) {
-//    lhs.m_args += rhs.m_args;
-//    return lhs;
-//}
-
-
 using GProtoInputArgs  = GIOProtoArgs<In_Tag>;
 using GProtoOutputArgs = GIOProtoArgs<Out_Tag>;
 
